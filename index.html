@@ -153,6 +153,12 @@ table.ing-table input.small{width:88px;}
 .row-del{color:var(--danger);font-size:18px;width:26px;height:26px;flex-shrink:0;}
 .add-row-btn{margin-top:10px;}
 .order-hint{font-size:10.5px;color:var(--text-light);}
+.bulk-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:10px 12px;background:var(--bg);border-radius:10px;}
+.bulk-row .field{margin-bottom:0;}
+.date-group{margin:22px 0 10px;display:flex;align-items:center;gap:10px;}
+.date-group h2{font-size:14px;color:var(--primary-dark);white-space:nowrap;}
+.date-group .line{flex:1;height:1px;background:var(--border);}
+.date-group .count{font-size:11px;color:var(--text-light);background:var(--card);border:1px solid var(--border);border-radius:20px;padding:2px 10px;}
 
 /* fill items table */
 table.fill-table{width:100%;border-collapse:collapse;}
@@ -231,9 +237,10 @@ table.fill-table input:focus{border-color:var(--border);background:#fff;outline:
         <span>🔍</span>
         <input type="text" id="searchInput" placeholder="レシピ名で検索...">
       </div>
+      <button class="btn btn-ghost" id="listCsvExportBtn">📤 一覧CSV</button>
       <button class="btn btn-primary" id="newRecipeBtn">＋ 新規レシピ</button>
     </div>
-    <div class="recipe-grid" id="recipeGrid"></div>
+    <div id="recipeGrid"></div>
     <div class="empty-state hidden" id="emptyState">
       <div class="big">🍲</div>
       <p>レシピがまだありません。「＋ 新規レシピ」から作成してください。</p>
@@ -282,12 +289,24 @@ table.fill-table input:focus{border-color:var(--border);background:#fff;outline:
         </div>
       </div>
 
+      <div class="bulk-row no-print">
+        <div class="field" style="flex:1;min-width:160px;">
+          <label>本日の担当者（一括入力）</label>
+          <input type="text" id="bulkChecker" placeholder="例）日高">
+        </div>
+        <button class="btn btn-ghost btn-sm" id="bulkApplyBtn">空欄の確認者に反映</button>
+        <span style="flex:1;"></span>
+        <input type="file" id="csvImportInput" accept=".csv" class="hidden">
+        <button class="btn btn-ghost btn-sm" id="csvImportBtn">📥 CSV取込</button>
+        <button class="btn btn-ghost btn-sm" id="csvExportBtn">📤 CSV書き出し</button>
+      </div>
       <div class="ing-table-wrap">
         <table class="ing-table">
           <thead>
             <tr>
               <th>準備済</th><th>原材料</th><th>仕入先</th><th>投入済</th>
-              <th>必要量</th><th>単位</th><th>倍率</th><th>発注量</th><th>有</th><th>ロット日付</th><th class="no-print"></th>
+              <th>必要量</th><th>単位</th><th>倍率</th><th>発注量</th><th>有</th><th>ロット日付</th>
+              <th>確認者</th><th>確認日</th><th class="no-print"></th>
             </tr>
           </thead>
           <tbody id="ingredientBody"></tbody>
@@ -534,23 +553,60 @@ function progressOf(r){
   ings.forEach(function(i){ if(i.prepared && i.input) done++; });
   return { done: done, total: ings.length, pct: Math.round(done/ings.length*100) };
 }
+var WEEKDAYS_JA = ['日','月','火','水','木','金','土'];
+function formatDateHeader(dateStr){
+  var d = new Date(dateStr + 'T00:00:00');
+  if(isNaN(d.getTime())) return dateStr;
+  return dateStr + '（' + WEEKDAYS_JA[d.getDay()] + '）';
+}
+function cardHtml(r){
+  var p = progressOf(r);
+  var dateStr = r.manufactureDate ? ('製造日: ' + r.manufactureDate) : '製造日: 未設定';
+  return '<div class="recipe-card" data-id="' + r.id + '">'
+    + '<h3>' + escapeHtml(r.name || '（無題のレシピ）') + '</h3>'
+    + '<div class="meta">' + dateStr + ' ・ 材料 ' + p.total + ' 品目</div>'
+    + '<div class="progress-row"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p.pct + '%;"></div></div><span>' + p.done + '/' + p.total + '</span></div>'
+    + '</div>';
+}
 function renderList(){
   var q = (document.getElementById('searchInput').value || '').toLowerCase();
-  var grid = document.getElementById('recipeGrid');
+  var wrap = document.getElementById('recipeGrid');
   var filtered = recipes.filter(function(r){ return (r.name||'').toLowerCase().indexOf(q) !== -1; });
   document.getElementById('emptyState').classList.toggle('hidden', recipes.length !== 0);
-  var html = '';
+
+  // group by manufactureDate; recipes without a date go into '' bucket
+  var groups = {};
+  var dated = [];
+  var undated = [];
   filtered.forEach(function(r){
-    var p = progressOf(r);
-    var dateStr = r.manufactureDate ? ('製造日: ' + r.manufactureDate) : '製造日: 未設定';
-    html += '<div class="recipe-card" data-id="' + r.id + '">'
-      + '<h3>' + escapeHtml(r.name || '（無題のレシピ）') + '</h3>'
-      + '<div class="meta">' + dateStr + ' ・ 材料 ' + p.total + ' 品目</div>'
-      + '<div class="progress-row"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p.pct + '%;"></div></div><span>' + p.done + '/' + p.total + '</span></div>'
-      + '</div>';
+    var key = r.manufactureDate || '';
+    if(key === ''){ undated.push(r); return; }
+    if(!groups[key]){ groups[key] = []; dated.push(key); }
+    groups[key].push(r);
   });
-  grid.innerHTML = html;
-  var cards = grid.querySelectorAll('.recipe-card');
+  dated.sort(); // chronological ascending (YYYY-MM-DD sorts correctly as string)
+  dated.forEach(function(key){
+    groups[key].sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'ja'); });
+  });
+  undated.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'ja'); });
+
+  var html = '';
+  dated.forEach(function(key){
+    var list = groups[key];
+    html += '<div class="date-group"><h2>📅 ' + formatDateHeader(key) + '</h2><div class="line"></div><span class="count">' + list.length + '件</span></div>';
+    html += '<div class="recipe-grid">';
+    list.forEach(function(r){ html += cardHtml(r); });
+    html += '</div>';
+  });
+  if(undated.length > 0){
+    html += '<div class="date-group"><h2>🗓️ 製造日未定</h2><div class="line"></div><span class="count">' + undated.length + '件</span></div>';
+    html += '<div class="recipe-grid">';
+    undated.forEach(function(r){ html += cardHtml(r); });
+    html += '</div>';
+  }
+  wrap.innerHTML = html;
+
+  var cards = wrap.querySelectorAll('.recipe-card');
   for(var i=0;i<cards.length;i++){
     cards[i].addEventListener('click', function(){
       openDetail(this.getAttribute('data-id'));
@@ -558,6 +614,12 @@ function renderList(){
   }
 }
 
+function todayStr(){
+  var d = new Date();
+  var m = String(d.getMonth()+1).padStart(2,'0');
+  var day = String(d.getDate()).padStart(2,'0');
+  return d.getFullYear() + '-' + m + '-' + day;
+}
 function escapeHtml(s){
   return String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -640,6 +702,8 @@ function renderIngredients(list){
       + '<td><span class="order-hint">' + orderAmt + '</span></td>'
       + '<td class="chk-cell"><button class="chk ing-chk' + (ing.inStock?' on':'') + '" data-field="inStock">' + (ing.inStock?'✓':'') + '</button></td>'
       + '<td><input type="text" class="ing-field small" data-field="lotDate" value="' + escapeHtml(ing.lotDate) + '" placeholder="日付/ロット"></td>'
+      + '<td><input type="text" class="ing-field small" data-field="checkedBy" value="' + escapeHtml(ing.checkedBy) + '" placeholder="確認者"></td>'
+      + '<td><input type="date" class="ing-field small" data-field="checkedDate" value="' + escapeHtml(ing.checkedDate) + '"></td>'
       + '<td class="no-print"><button class="row-del" data-action="delIng">✕</button></td>'
       + '</tr>';
   });
@@ -665,7 +729,11 @@ function bindIngredientRow(row){
       var field = this.getAttribute('data-field');
       var r = getCurrentRecipe();
       if(!r) return;
-      r.ingredients[idx][field] = !r.ingredients[idx][field];
+      var newVal = !r.ingredients[idx][field];
+      r.ingredients[idx][field] = newVal;
+      if(newVal){
+        r.ingredients[idx].checkedDate = todayStr();
+      }
       saveRecipe(r);
     });
   }
@@ -779,6 +847,7 @@ function applyEditMode(){
   for(var j=0;j<delBtns.length;j++){ delBtns[j].style.visibility = editMode ? 'visible' : 'hidden'; }
   document.getElementById('addIngBtn').classList.toggle('hidden', !editMode);
   document.getElementById('addFillBtn').classList.toggle('hidden', !editMode);
+  document.getElementById('csvImportBtn').classList.toggle('hidden', !editMode);
   var fillNameFields = document.querySelectorAll('.fill-field');
   for(var k=0;k<fillNameFields.length;k++){ fillNameFields[k].disabled = !editMode; }
 
@@ -846,7 +915,7 @@ function addIngredientRow(){
   var r = getCurrentRecipe();
   if(!r) return;
   if(!r.ingredients) r.ingredients = [];
-  r.ingredients.push({ name:'', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, input:false, inStock:false });
+  r.ingredients.push({ name:'', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, input:false, inStock:false, checkedBy:'', checkedDate:'' });
   saveRecipe(r);
 }
 function addFillItemRow(){
@@ -893,6 +962,7 @@ function resetChecklist(){
   r.manufactureDate = '';
   (r.ingredients||[]).forEach(function(i){
     i.prepared = false; i.input = false; i.inStock = false; i.lotDate = '';
+    i.checkedBy = ''; i.checkedDate = '';
   });
   saveRecipe(r);
   showToast('チェックリストをリセットしました');
@@ -907,11 +977,152 @@ function doDelete(){
   }).catch(function(e){ console.error(e); showToast('削除に失敗しました', true); });
 }
 
+// ---------- Bulk checker fill ----------
+function bulkApplyChecker(){
+  var r = getCurrentRecipe();
+  if(!r) return;
+  var name = document.getElementById('bulkChecker').value.trim();
+  if(!name){ showToast('担当者名を入力してください', true); return; }
+  var today = todayStr();
+  var count = 0;
+  (r.ingredients||[]).forEach(function(i){
+    if(!i.checkedBy){ i.checkedBy = name; if(!i.checkedDate){ i.checkedDate = today; } count++; }
+  });
+  if(count === 0){ showToast('空欄の確認者はありませんでした'); return; }
+  saveRecipe(r);
+  showToast(count + '件の確認者を「' + name + '」に反映しました');
+}
+
+// ---------- CSV helpers ----------
+function csvEscapeField(v){
+  v = (v === undefined || v === null) ? '' : String(v);
+  if(v.indexOf(',') !== -1 || v.indexOf('"') !== -1 || v.indexOf('\n') !== -1){
+    v = '"' + v.replace(/"/g,'""') + '"';
+  }
+  return v;
+}
+function csvParseText(text){
+  // Basic RFC4180-ish CSV parser supporting quoted fields with commas/newlines.
+  var rows = [];
+  var row = [];
+  var field = '';
+  var inQuotes = false;
+  for(var i=0;i<text.length;i++){
+    var c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else{ inQuotes = false; }
+      } else { field += c; }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(field); field = ''; }
+      else if(c === '\n'){ row.push(field); field=''; rows.push(row); row=[]; }
+      else if(c === '\r'){ /* skip */ }
+      else { field += c; }
+    }
+  }
+  if(field.length > 0 || row.length > 0){ row.push(field); rows.push(row); }
+  return rows.filter(function(r){ return !(r.length===1 && r[0]===''); });
+}
+function downloadTextFile(filename, text){
+  var blob = new Blob(['\ufeff' + text], {type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+var ING_CSV_HEADERS = ['原材料名','仕入先','必要量','単位','倍率','ロット日付','準備済','投入済','有','確認者','確認日'];
+function exportIngredientsCSV(){
+  var r = getCurrentRecipe();
+  if(!r) return;
+  var lines = [ING_CSV_HEADERS.join(',')];
+  (r.ingredients||[]).forEach(function(i){
+    lines.push([
+      csvEscapeField(i.name), csvEscapeField(i.supplier), csvEscapeField(i.requiredAmount),
+      csvEscapeField(i.unit), csvEscapeField(i.multiplier), csvEscapeField(i.lotDate),
+      i.prepared ? '1' : '0', i.input ? '1' : '0', i.inStock ? '1' : '0',
+      csvEscapeField(i.checkedBy), csvEscapeField(i.checkedDate)
+    ].join(','));
+  });
+  var fname = (r.name || 'recipe').replace(/[\\/:*?"<>|]/g,'_') + '_原材料.csv';
+  downloadTextFile(fname, lines.join('\n'));
+  showToast('CSVを書き出しました');
+}
+function importIngredientsCSV(file){
+  var r = getCurrentRecipe();
+  if(!r) return;
+  var reader = new FileReader();
+  reader.onload = function(e){
+    var rows = csvParseText(String(e.target.result));
+    if(rows.length < 1){ showToast('CSVにデータがありません', true); return; }
+    var header = rows[0];
+    var idxOf = function(name){ return header.indexOf(name); };
+    var iName = idxOf('原材料名'), iSup = idxOf('仕入先'), iReq = idxOf('必要量'),
+        iUnit = idxOf('単位'), iMult = idxOf('倍率'), iLot = idxOf('ロット日付'),
+        iPrep = idxOf('準備済'), iInput = idxOf('投入済'), iStock = idxOf('有'),
+        iBy = idxOf('確認者'), iDate = idxOf('確認日');
+    if(iName === -1){ showToast('CSVの見出し行に「原材料名」列が見つかりません', true); return; }
+    var toBool = function(v){ return v==='1' || v==='true' || v==='TRUE' || v==='○' || v==='✓'; };
+    var newRows = [];
+    for(var i=1;i<rows.length;i++){
+      var row = rows[i];
+      if(!row[iName]) continue;
+      newRows.push({
+        name: row[iName] || '',
+        supplier: iSup>-1 ? (row[iSup]||'') : '',
+        requiredAmount: iReq>-1 && row[iReq] !== '' ? parseFloat(row[iReq]) : '',
+        unit: iUnit>-1 ? (row[iUnit]||'kg') : 'kg',
+        multiplier: iMult>-1 && row[iMult] !== '' ? parseFloat(row[iMult]) : 1,
+        lotDate: iLot>-1 ? (row[iLot]||'') : '',
+        prepared: iPrep>-1 ? toBool(row[iPrep]) : false,
+        input: iInput>-1 ? toBool(row[iInput]) : false,
+        inStock: iStock>-1 ? toBool(row[iStock]) : false,
+        checkedBy: iBy>-1 ? (row[iBy]||'') : '',
+        checkedDate: iDate>-1 ? (row[iDate]||'') : ''
+      });
+    }
+    if(newRows.length === 0){ showToast('取り込める行がありませんでした', true); return; }
+    var replace = confirm('現在の原材料リスト（' + (r.ingredients||[]).length + '件）を、CSVの内容（' + newRows.length + '件）で置き換えますか？\n\nキャンセルすると末尾に追加します。');
+    if(replace){ r.ingredients = newRows; }
+    else { r.ingredients = (r.ingredients||[]).concat(newRows); }
+    saveRecipe(r);
+    showToast('CSVを取り込みました（' + newRows.length + '件）');
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+function exportRecipeListCSV(){
+  var lines = ['品名,製造日,最終材料着日,材料数,準備完了数,更新日時'];
+  recipes.forEach(function(r){
+    var p = progressOf(r);
+    var upd = r.updatedAt ? new Date(r.updatedAt).toLocaleString('ja-JP') : '';
+    lines.push([
+      csvEscapeField(r.name), csvEscapeField(r.manufactureDate), csvEscapeField(r.finalMaterialDate),
+      p.total, p.done, csvEscapeField(upd)
+    ].join(','));
+  });
+  downloadTextFile('レシピ一覧.csv', lines.join('\n'));
+  showToast('CSVを書き出しました');
+}
+
 // ---------- Event bindings ----------
 document.getElementById('newRecipeBtn').addEventListener('click', createNewRecipe);
+document.getElementById('listCsvExportBtn').addEventListener('click', exportRecipeListCSV);
 document.getElementById('backBtn').addEventListener('click', closeDetail);
 document.getElementById('searchInput').addEventListener('input', renderList);
 document.getElementById('addIngBtn').addEventListener('click', addIngredientRow);
+document.getElementById('bulkApplyBtn').addEventListener('click', bulkApplyChecker);
+document.getElementById('csvExportBtn').addEventListener('click', exportIngredientsCSV);
+document.getElementById('csvImportBtn').addEventListener('click', function(){
+  document.getElementById('csvImportInput').click();
+});
+document.getElementById('csvImportInput').addEventListener('change', function(){
+  if(this.files && this.files[0]){
+    importIngredientsCSV(this.files[0]);
+    this.value = '';
+  }
+});
 document.getElementById('addFillBtn').addEventListener('click', addFillItemRow);
 document.getElementById('printBtn').addEventListener('click', function(){ window.print(); });
 document.getElementById('dupBtn').addEventListener('click', duplicateRecipe);
