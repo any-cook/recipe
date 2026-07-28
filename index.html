@@ -10,6 +10,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
   --primary:#c0562c;
@@ -243,6 +244,8 @@ table.fill-table input:focus{border-color:var(--border);background:#fff;outline:
         <input type="text" id="searchInput" placeholder="レシピ名で検索...">
       </div>
       <button class="btn btn-ghost" id="listCsvExportBtn">📤 一覧CSV</button>
+      <input type="file" id="excelImportInput" accept=".xlsx,.xls" class="hidden">
+      <button class="btn btn-outline" id="excelImportBtn">📊 Excel一括登録</button>
       <button class="btn btn-primary" id="newRecipeBtn">＋ 新規レシピ</button>
     </div>
     <div id="recipeGrid"></div>
@@ -1170,9 +1173,127 @@ function exportRecipeListCSV(){
   showToast('CSVを書き出しました');
 }
 
+// ---------- Excel bulk recipe import (レシピ全体の一括登録) ----------
+var MASTER_SHEET_NAME = 'レシピ基本情報';
+var ING_SHEET_NAME = '原材料';
+var FILL_SHEET_NAME = '具材配合表';
+
+function importRecipesExcel(file){
+  var reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      var data = new Uint8Array(e.target.result);
+      var wb = XLSX.read(data, {type:'array'});
+      var sheetMaster = wb.Sheets[MASTER_SHEET_NAME];
+      var sheetIng = wb.Sheets[ING_SHEET_NAME];
+      var sheetFill = wb.Sheets[FILL_SHEET_NAME];
+      if(!sheetMaster){
+        showToast('「' + MASTER_SHEET_NAME + '」シートが見つかりません', true);
+        return;
+      }
+      var masterRows = XLSX.utils.sheet_to_json(sheetMaster, {defval:''});
+      var ingRows = sheetIng ? XLSX.utils.sheet_to_json(sheetIng, {defval:''}) : [];
+      var fillRows = sheetFill ? XLSX.utils.sheet_to_json(sheetFill, {defval:''}) : [];
+
+      if(masterRows.length === 0){
+        showToast(MASTER_SHEET_NAME + 'シートにデータがありません', true);
+        return;
+      }
+
+      var ingByName = {};
+      ingRows.forEach(function(row){
+        var key = String(row['品名']||'').trim();
+        if(!key) return;
+        if(!ingByName[key]) ingByName[key] = [];
+        var reqVal = row['必要量'];
+        var multVal = row['倍率'];
+        ingByName[key].push({
+          name: String(row['原材料名']||''),
+          supplier: String(row['仕入先']||''),
+          requiredAmount: (reqVal !== '' && reqVal !== null && reqVal !== undefined) ? parseFloat(reqVal) : '',
+          unit: String(row['単位']||'kg'),
+          multiplier: (multVal !== '' && multVal !== null && multVal !== undefined) ? parseFloat(multVal) : 1,
+          lotDate: '', prepared: false, preparedBy: '', preparedDate: '',
+          input: false, inputBy: '', inputDate: '', inStock: false, deliveryDate: ''
+        });
+      });
+      var fillByName = {};
+      fillRows.forEach(function(row){
+        var key = String(row['品名']||'').trim();
+        if(!key) return;
+        if(!fillByName[key]) fillByName[key] = [];
+        fillByName[key].push({
+          name: String(row['材料名']||''),
+          weight: String(row['重量・分量']||'')
+        });
+      });
+
+      var toCreate = [];
+      var toUpdate = [];
+      masterRows.forEach(function(row){
+        var name = String(row['品名']||'').trim();
+        if(!name) return;
+        var fields = {
+          name: name,
+          yieldAmount: String(row['上がり（出来高）']||''),
+          packageContent: String(row['内容量（パック規格）']||''),
+          packageContainer: String(row['容器・パウチ']||''),
+          fillingMachine: String(row['使用充填機']||''),
+          fillingValue: String(row['充填機数値']||''),
+          vacuumMachine: String(row['真空機']||''),
+          sealTemp: String(row['第一シール機温度']||''),
+          shelfLife: String(row['賞味期限']||''),
+          retortPattern: String(row['レトルトパターン']||''),
+          retortLayout: String(row['レトルト機陳列方法']||''),
+          prepNotes: String(row['製造日前準備']||''),
+          duringNotes: String(row['製造中の注意事項']||''),
+          afterNotes: String(row['加熱殺菌後・出荷時の注意事項']||''),
+          ingredients: ingByName[name] || [],
+          fillItems: fillByName[name] || [],
+          updatedAt: Date.now()
+        };
+        var existing = recipes.filter(function(r){ return r.name === name; })[0];
+        if(existing){ toUpdate.push({ id: existing.id, fields: fields }); }
+        else { fields.createdAt = Date.now(); toCreate.push(fields); }
+      });
+
+      if(toCreate.length === 0 && toUpdate.length === 0){
+        showToast('取り込めるレシピがありませんでした', true);
+        return;
+      }
+      var ok = confirm('新規 ' + toCreate.length + '件、更新 ' + toUpdate.length + '件のレシピを登録します。よろしいですか？');
+      if(!ok) return;
+
+      var writes = [];
+      toCreate.forEach(function(f){ writes.push(db.collection('recipes').add(f)); });
+      toUpdate.forEach(function(u){ writes.push(db.collection('recipes').doc(u.id).set(u.fields, {merge:true})); });
+
+      Promise.all(writes).then(function(){
+        showToast('新規' + toCreate.length + '件、更新' + toUpdate.length + '件を登録しました');
+      }).catch(function(err){
+        console.error(err);
+        showToast('登録中にエラーが発生しました', true);
+      });
+    }catch(err){
+      console.error(err);
+      showToast('Excelファイルの読み込みに失敗しました', true);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 // ---------- Event bindings ----------
 document.getElementById('newRecipeBtn').addEventListener('click', createNewRecipe);
 document.getElementById('listCsvExportBtn').addEventListener('click', exportRecipeListCSV);
+document.getElementById('excelImportBtn').addEventListener('click', function(){
+  document.getElementById('excelImportInput').click();
+});
+document.getElementById('excelImportInput').addEventListener('change', function(){
+  if(this.files && this.files[0]){
+    importRecipesExcel(this.files[0]);
+    this.value = '';
+  }
+});
 document.getElementById('backBtn').addEventListener('click', closeDetail);
 document.getElementById('searchInput').addEventListener('input', renderList);
 document.getElementById('addIngBtn').addEventListener('click', addIngredientRow);
