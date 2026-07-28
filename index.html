@@ -155,6 +155,8 @@ table.ing-table input.small{width:88px;}
 .order-hint{font-size:10.5px;color:var(--text-light);}
 .bulk-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:10px 12px;background:var(--bg);border-radius:10px;}
 .bulk-row .field{margin-bottom:0;}
+.final-record{margin-top:6px;padding:14px;background:var(--success-light);border-radius:10px;border:1px solid #d3e8d8;}
+.final-record .sheet-title{border-bottom:none;margin-bottom:10px;padding-bottom:0;color:var(--success);}
 .date-group{margin:22px 0 10px;display:flex;align-items:center;gap:10px;}
 .date-group h2{font-size:14px;color:var(--primary-dark);white-space:nowrap;}
 .date-group .line{flex:1;height:1px;background:var(--border);}
@@ -294,7 +296,7 @@ table.fill-table input:focus{border-color:var(--border);background:#fff;outline:
           <label>本日の担当者（一括入力）</label>
           <input type="text" id="bulkChecker" placeholder="例）日高">
         </div>
-        <button class="btn btn-ghost btn-sm" id="bulkApplyBtn">空欄の確認者に反映</button>
+        <button class="btn btn-ghost btn-sm" id="bulkApplyBtn">空欄の準備・投入確認者に反映</button>
         <span style="flex:1;"></span>
         <input type="file" id="csvImportInput" accept=".csv" class="hidden">
         <button class="btn btn-ghost btn-sm" id="csvImportBtn">📥 CSV取込</button>
@@ -304,16 +306,34 @@ table.fill-table input:focus{border-color:var(--border);background:#fff;outline:
         <table class="ing-table">
           <thead>
             <tr>
-              <th>準備済</th><th>原材料</th><th>仕入先</th><th>投入済</th>
-              <th>必要量</th><th>単位</th><th>倍率</th><th>発注量</th><th>有</th><th>ロット日付</th>
-              <th>確認者</th><th>確認日</th><th class="no-print"></th>
+              <th>準備済</th><th>準備確認者</th><th>原材料</th><th>仕入先</th><th>投入済</th><th>投入確認者</th>
+              <th>必要量</th><th>単位</th><th>倍率</th><th>発注量</th><th>有</th><th>ロット日付</th><th class="no-print"></th>
             </tr>
           </thead>
           <tbody id="ingredientBody"></tbody>
         </table>
       </div>
       <button class="btn btn-ghost btn-sm add-row-btn no-print" id="addIngBtn">＋ 原材料を追加</button>
+
+      <div class="final-record">
+        <div class="sheet-title" style="margin-top:18px;"><span class="num">✓</span>製造実績・最終確認</div>
+        <div class="field-row">
+          <div class="field">
+            <label>実績製造数</label>
+            <input type="text" id="f_actualYield" placeholder="例）698パック">
+          </div>
+          <div class="field">
+            <label>最終確認者</label>
+            <input type="text" id="f_finalConfirmedBy" placeholder="製造数を記入・保存した人">
+          </div>
+          <div class="field">
+            <label>最終確認日</label>
+            <input type="date" id="f_finalConfirmedDate">
+          </div>
+        </div>
+      </div>
     </div>
+
 
     <!-- SHEET 2: 調理手順・製造設定 -->
     <div class="sheet">
@@ -614,6 +634,11 @@ function renderList(){
   }
 }
 
+function autoGrowTextarea(el){
+  if(!el) return;
+  el.style.height = 'auto';
+  el.style.height = (el.scrollHeight + 4) + 'px';
+}
 function todayStr(){
   var d = new Date();
   var m = String(d.getMonth()+1).padStart(2,'0');
@@ -664,6 +689,12 @@ function renderDetail(r){
   setVal('f_prepNotes', r.prepNotes);
   setVal('f_duringNotes', r.duringNotes);
   setVal('f_afterNotes', r.afterNotes);
+  setVal('f_actualYield', r.actualYield);
+  setVal('f_finalConfirmedBy', r.finalConfirmedBy);
+  setVal('f_finalConfirmedDate', r.finalConfirmedDate);
+  ['f_prepNotes','f_duringNotes','f_afterNotes'].forEach(function(id){
+    autoGrowTextarea(document.getElementById(id));
+  });
 
   renderIngredients(r.ingredients || []);
   renderFillItems(r.fillItems || []);
@@ -693,17 +724,17 @@ function renderIngredients(list){
     }
     html += '<tr data-idx="' + idx + '">'
       + '<td class="chk-cell"><button class="chk ing-chk' + (ing.prepared?' on':'') + '" data-field="prepared">' + (ing.prepared?'✓':'') + '</button></td>'
+      + '<td><input type="text" class="ing-field small" data-field="preparedBy" value="' + escapeHtml(ing.preparedBy) + '" placeholder="準備確認者" title="' + (ing.preparedDate ? '確認日: '+escapeHtml(ing.preparedDate) : '') + '"></td>'
       + '<td><input type="text" class="ing-field" data-field="name" value="' + escapeHtml(ing.name) + '" placeholder="原材料名"></td>'
       + '<td><input type="text" class="ing-field" data-field="supplier" value="' + escapeHtml(ing.supplier) + '" placeholder="仕入先"></td>'
       + '<td class="chk-cell"><button class="chk ing-chk' + (ing.input?' on':'') + '" data-field="input">' + (ing.input?'✓':'') + '</button></td>'
+      + '<td><input type="text" class="ing-field small" data-field="inputBy" value="' + escapeHtml(ing.inputBy) + '" placeholder="投入確認者" title="' + (ing.inputDate ? '確認日: '+escapeHtml(ing.inputDate) : '') + '"></td>'
       + '<td><input type="number" step="0.01" class="ing-field num" data-field="requiredAmount" value="' + (ing.requiredAmount==null?'':ing.requiredAmount) + '" placeholder="0"></td>'
       + '<td><select class="ing-field" data-field="unit">' + unitOptionsHtml(ing.unit) + '</select></td>'
       + '<td><input type="number" step="0.1" class="ing-field num" data-field="multiplier" value="' + mult + '"></td>'
       + '<td><span class="order-hint">' + orderAmt + '</span></td>'
       + '<td class="chk-cell"><button class="chk ing-chk' + (ing.inStock?' on':'') + '" data-field="inStock">' + (ing.inStock?'✓':'') + '</button></td>'
       + '<td><input type="text" class="ing-field small" data-field="lotDate" value="' + escapeHtml(ing.lotDate) + '" placeholder="日付/ロット"></td>'
-      + '<td><input type="text" class="ing-field small" data-field="checkedBy" value="' + escapeHtml(ing.checkedBy) + '" placeholder="確認者"></td>'
-      + '<td><input type="date" class="ing-field small" data-field="checkedDate" value="' + escapeHtml(ing.checkedDate) + '"></td>'
       + '<td class="no-print"><button class="row-del" data-action="delIng">✕</button></td>'
       + '</tr>';
   });
@@ -731,10 +762,13 @@ function bindIngredientRow(row){
       if(!r) return;
       var newVal = !r.ingredients[idx][field];
       r.ingredients[idx][field] = newVal;
-      if(newVal){
-        r.ingredients[idx].checkedDate = todayStr();
+      if(newVal && field === 'prepared'){
+        r.ingredients[idx].preparedDate = todayStr();
+      } else if(newVal && field === 'input'){
+        r.ingredients[idx].inputDate = todayStr();
       }
       saveRecipe(r);
+      renderIngredients(r.ingredients || []);
     });
   }
   var fields = row.querySelectorAll('.ing-field');
@@ -834,8 +868,7 @@ function applyEditMode(){
 
   var lockIds = ['f_name','f_finalMaterialDate','f_yield','f_lotNo',
     'f_packageContent','f_packageContainer','f_fillingMachine','f_fillingValue',
-    'f_vacuumMachine','f_sealTemp','f_shelfLife','f_retortPattern','f_retortLayout',
-    'f_prepNotes','f_duringNotes','f_afterNotes'];
+    'f_vacuumMachine','f_sealTemp','f_shelfLife','f_retortPattern','f_retortLayout'];
   lockIds.forEach(function(id){
     document.getElementById(id).disabled = !editMode;
   });
@@ -915,7 +948,7 @@ function addIngredientRow(){
   var r = getCurrentRecipe();
   if(!r) return;
   if(!r.ingredients) r.ingredients = [];
-  r.ingredients.push({ name:'', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, input:false, inStock:false, checkedBy:'', checkedDate:'' });
+  r.ingredients.push({ name:'', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, preparedBy:'', preparedDate:'', input:false, inputBy:'', inputDate:'', inStock:false });
   saveRecipe(r);
 }
 function addFillItemRow(){
@@ -931,6 +964,7 @@ function createNewRecipe(){
     ingredients:[], packageContent:'', packageContainer:'', fillingMachine:'', fillingValue:'',
     vacuumMachine:'', sealTemp:'', shelfLife:'', retortPattern:'', retortLayout:'',
     fillItems:[], prepNotes:'', duringNotes:'', afterNotes:'',
+    actualYield:'', finalConfirmedBy:'', finalConfirmedDate:'',
     createdAt: Date.now(), updatedAt: Date.now()
   };
   db.collection('recipes').add(blank).then(function(docRef){
@@ -957,12 +991,16 @@ function duplicateRecipe(){
 function resetChecklist(){
   var r = getCurrentRecipe();
   if(!r) return;
-  if(!confirm('チェック状態・ロット日付・製造日・最終材料着日をリセットして、新しい製造をはじめますか？')) return;
+  if(!confirm('チェック状態・確認者・ロット日付・製造日・最終材料着日・製造実績をリセットして、新しい製造をはじめますか？\n\n（製造日前準備／製造中の注意事項／加熱殺菌後・出荷時の注意事項のメモは引き継がれます）')) return;
   r.finalMaterialDate = '';
   r.manufactureDate = '';
+  r.actualYield = '';
+  r.finalConfirmedBy = '';
+  r.finalConfirmedDate = '';
   (r.ingredients||[]).forEach(function(i){
     i.prepared = false; i.input = false; i.inStock = false; i.lotDate = '';
-    i.checkedBy = ''; i.checkedDate = '';
+    i.preparedBy = ''; i.preparedDate = '';
+    i.inputBy = ''; i.inputDate = '';
   });
   saveRecipe(r);
   showToast('チェックリストをリセットしました');
@@ -983,14 +1021,14 @@ function bulkApplyChecker(){
   if(!r) return;
   var name = document.getElementById('bulkChecker').value.trim();
   if(!name){ showToast('担当者名を入力してください', true); return; }
-  var today = todayStr();
   var count = 0;
   (r.ingredients||[]).forEach(function(i){
-    if(!i.checkedBy){ i.checkedBy = name; if(!i.checkedDate){ i.checkedDate = today; } count++; }
+    if(!i.preparedBy){ i.preparedBy = name; count++; }
+    if(!i.inputBy){ i.inputBy = name; count++; }
   });
   if(count === 0){ showToast('空欄の確認者はありませんでした'); return; }
   saveRecipe(r);
-  showToast(count + '件の確認者を「' + name + '」に反映しました');
+  showToast(count + '件の確認者欄を「' + name + '」に反映しました');
 }
 
 // ---------- CSV helpers ----------
@@ -1033,7 +1071,7 @@ function downloadTextFile(filename, text){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
 }
-var ING_CSV_HEADERS = ['原材料名','仕入先','必要量','単位','倍率','ロット日付','準備済','投入済','有','確認者','確認日'];
+var ING_CSV_HEADERS = ['原材料名','仕入先','必要量','単位','倍率','ロット日付','準備済','準備確認者','準備確認日','投入済','投入確認者','投入確認日','有'];
 function exportIngredientsCSV(){
   var r = getCurrentRecipe();
   if(!r) return;
@@ -1042,8 +1080,9 @@ function exportIngredientsCSV(){
     lines.push([
       csvEscapeField(i.name), csvEscapeField(i.supplier), csvEscapeField(i.requiredAmount),
       csvEscapeField(i.unit), csvEscapeField(i.multiplier), csvEscapeField(i.lotDate),
-      i.prepared ? '1' : '0', i.input ? '1' : '0', i.inStock ? '1' : '0',
-      csvEscapeField(i.checkedBy), csvEscapeField(i.checkedDate)
+      i.prepared ? '1' : '0', csvEscapeField(i.preparedBy), csvEscapeField(i.preparedDate),
+      i.input ? '1' : '0', csvEscapeField(i.inputBy), csvEscapeField(i.inputDate),
+      i.inStock ? '1' : '0'
     ].join(','));
   });
   var fname = (r.name || 'recipe').replace(/[\\/:*?"<>|]/g,'_') + '_原材料.csv';
@@ -1061,8 +1100,9 @@ function importIngredientsCSV(file){
     var idxOf = function(name){ return header.indexOf(name); };
     var iName = idxOf('原材料名'), iSup = idxOf('仕入先'), iReq = idxOf('必要量'),
         iUnit = idxOf('単位'), iMult = idxOf('倍率'), iLot = idxOf('ロット日付'),
-        iPrep = idxOf('準備済'), iInput = idxOf('投入済'), iStock = idxOf('有'),
-        iBy = idxOf('確認者'), iDate = idxOf('確認日');
+        iPrep = idxOf('準備済'), iPrepBy = idxOf('準備確認者'), iPrepDate = idxOf('準備確認日'),
+        iInput = idxOf('投入済'), iInputBy = idxOf('投入確認者'), iInputDate = idxOf('投入確認日'),
+        iStock = idxOf('有');
     if(iName === -1){ showToast('CSVの見出し行に「原材料名」列が見つかりません', true); return; }
     var toBool = function(v){ return v==='1' || v==='true' || v==='TRUE' || v==='○' || v==='✓'; };
     var newRows = [];
@@ -1077,10 +1117,12 @@ function importIngredientsCSV(file){
         multiplier: iMult>-1 && row[iMult] !== '' ? parseFloat(row[iMult]) : 1,
         lotDate: iLot>-1 ? (row[iLot]||'') : '',
         prepared: iPrep>-1 ? toBool(row[iPrep]) : false,
+        preparedBy: iPrepBy>-1 ? (row[iPrepBy]||'') : '',
+        preparedDate: iPrepDate>-1 ? (row[iPrepDate]||'') : '',
         input: iInput>-1 ? toBool(row[iInput]) : false,
-        inStock: iStock>-1 ? toBool(row[iStock]) : false,
-        checkedBy: iBy>-1 ? (row[iBy]||'') : '',
-        checkedDate: iDate>-1 ? (row[iDate]||'') : ''
+        inputBy: iInputBy>-1 ? (row[iInputBy]||'') : '',
+        inputDate: iInputDate>-1 ? (row[iInputDate]||'') : '',
+        inStock: iStock>-1 ? toBool(row[iStock]) : false
       });
     }
     if(newRows.length === 0){ showToast('取り込める行がありませんでした', true); return; }
@@ -1139,8 +1181,28 @@ document.getElementById('pinCancelBtn').addEventListener('click', closePinModal)
  ['f_packageContainer','packageContainer'],['f_fillingMachine','fillingMachine'],['f_fillingValue','fillingValue'],
  ['f_vacuumMachine','vacuumMachine'],['f_sealTemp','sealTemp'],['f_shelfLife','shelfLife'],
  ['f_retortPattern','retortPattern'],['f_retortLayout','retortLayout'],
- ['f_prepNotes','prepNotes'],['f_duringNotes','duringNotes'],['f_afterNotes','afterNotes']
+ ['f_prepNotes','prepNotes'],['f_duringNotes','duringNotes'],['f_afterNotes','afterNotes'],
+ ['f_actualYield','actualYield'],['f_finalConfirmedBy','finalConfirmedBy'],['f_finalConfirmedDate','finalConfirmedDate']
 ].forEach(function(pair){ bindHeaderFieldSave(pair[0], pair[1]); });
+
+// Auto-set final confirmation date once actual yield or final confirmer name is filled in
+['f_actualYield','f_finalConfirmedBy'].forEach(function(id){
+  document.getElementById(id).addEventListener('change', function(){
+    var r = getCurrentRecipe();
+    if(!r) return;
+    if(!r.finalConfirmedDate){
+      r.finalConfirmedDate = todayStr();
+      setVal('f_finalConfirmedDate', r.finalConfirmedDate);
+      saveRecipe(r);
+    }
+  });
+});
+
+// Auto-grow the three note textareas so their full content is always visible
+['f_prepNotes','f_duringNotes','f_afterNotes'].forEach(function(id){
+  var el = document.getElementById(id);
+  el.addEventListener('input', function(){ autoGrowTextarea(el); });
+});
 
 document.getElementById('settingsBtn').addEventListener('click', function(){
   var cfg = getConfig() || {};
