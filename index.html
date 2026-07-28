@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#c0562c">
+<title>レシピ管理システム | Any-Cook</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --primary:#c0562c;
+  --primary-dark:#8f3f1f;
+  --primary-light:#f3e2d8;
+  --bg:#f7f4f0;
+  --card:#ffffff;
+  --border:#e4ddd3;
+  --text:#2b2620;
+  --text-light:#8a8078;
+  --success:#3d8b52;
+  --success-light:#e5f2e8;
+  --danger:#b8402f;
+  --danger-light:#fbe9e6;
+  --warn:#c98a1f;
+  --warn-light:#fbf0dc;
+  --radius:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  padding-bottom:40px;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;}
+input,select,textarea{font-family:inherit;font-size:15px;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:#d8d0c5;border-radius:4px;}
+
+/* ===== Header ===== */
+header{
+  position:sticky;top:0;z-index:50;
+  background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+  color:#fff;padding:14px 16px;
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 10px rgba(0,0,0,.15);
+}
+header .brand{display:flex;align-items:center;gap:10px;}
+header .brand .logo{font-size:26px;}
+header .brand h1{font-size:17px;font-weight:700;letter-spacing:.5px;}
+header .brand small{display:block;font-size:11px;opacity:.85;font-weight:400;}
+#connDot{width:9px;height:9px;border-radius:50%;background:#e0e0e0;display:inline-block;margin-right:6px;}
+#connDot.on{background:#7ee08a;box-shadow:0 0 6px #7ee08a;}
+#connDot.off{background:#ff8a80;}
+.header-right{display:flex;align-items:center;gap:10px;font-size:12px;opacity:.9;}
+.icon-btn{
+  width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.18);
+  color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;
+}
+.icon-btn:active{background:rgba(255,255,255,.32);}
+
+/* ===== Layout ===== */
+.container{max-width:920px;margin:0 auto;padding:16px;}
+.hidden{display:none !important;}
+
+/* ===== Buttons ===== */
+.btn{
+  padding:10px 18px;border-radius:10px;font-size:14px;font-weight:600;
+  display:inline-flex;align-items:center;gap:6px;transition:.15s;
+}
+.btn-primary{background:var(--primary);color:#fff;}
+.btn-primary:active{background:var(--primary-dark);}
+.btn-outline{background:#fff;color:var(--primary);border:1.5px solid var(--primary);}
+.btn-ghost{background:var(--card);color:var(--text);border:1px solid var(--border);}
+.btn-danger{background:var(--danger-light);color:var(--danger);}
+.btn-success{background:var(--success-light);color:var(--success);}
+.btn-sm{padding:6px 12px;font-size:12.5px;border-radius:8px;}
+.btn-block{width:100%;justify-content:center;}
+.btn:disabled{opacity:.4;pointer-events:none;}
+
+/* ===== List view ===== */
+.toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+.search-box{
+  flex:1;min-width:180px;background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:8px;
+}
+.search-box input{border:none;outline:none;width:100%;background:transparent;}
+.recipe-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;}
+.recipe-card{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;cursor:pointer;transition:.15s;position:relative;overflow:hidden;
+}
+.recipe-card:active{transform:scale(.98);}
+.recipe-card::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--primary);
+}
+.recipe-card h3{font-size:16px;margin-bottom:6px;padding-right:10px;}
+.recipe-card .meta{font-size:12px;color:var(--text-light);margin-bottom:10px;}
+.recipe-card .progress-row{display:flex;align-items:center;gap:8px;font-size:12px;}
+.progress-bar{flex:1;height:6px;background:#eee2d8;border-radius:3px;overflow:hidden;}
+.progress-bar-fill{height:100%;background:var(--success);border-radius:3px;transition:.3s;}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-light);}
+.empty-state .big{font-size:44px;margin-bottom:12px;}
+
+/* ===== Detail view ===== */
+.detail-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+.detail-header .actions{display:flex;gap:8px;flex-wrap:wrap;}
+.back-btn{display:flex;align-items:center;gap:6px;color:var(--text-light);font-size:14px;font-weight:600;}
+
+.sheet{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);padding:20px;margin-bottom:20px;}
+.sheet-title{
+  display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--primary-dark);
+  border-bottom:2px solid var(--primary-light);padding-bottom:10px;margin-bottom:16px;
+}
+.sheet-title .num{
+  width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;
+  font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:11.5px;color:var(--text-light);font-weight:600;}
+.field input,.field textarea,.field select{
+  border:1px solid var(--border);border-radius:8px;padding:9px 10px;background:#fff;
+}
+.field input:disabled,.field textarea:disabled,.field select:disabled{background:var(--bg);color:var(--text);border-color:transparent;-webkit-text-fill-color:var(--text);opacity:1;}
+.field textarea{resize:vertical;min-height:60px;line-height:1.5;}
+.field-title-input{font-size:19px;font-weight:700;padding:8px 10px;}
+
+/* ingredient table */
+.ing-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+table.ing-table{width:100%;border-collapse:collapse;min-width:760px;}
+table.ing-table th{
+  font-size:11px;color:var(--text-light);text-align:left;padding:6px 6px;font-weight:700;
+  border-bottom:1px solid var(--border);white-space:nowrap;
+}
+table.ing-table td{padding:5px 6px;border-bottom:1px solid #f0ebe4;vertical-align:middle;}
+table.ing-table input,table.ing-table select{width:100%;border:1px solid transparent;border-radius:6px;padding:6px 7px;background:transparent;}
+table.ing-table input:focus,table.ing-table select:focus{border-color:var(--border);background:#fff;outline:none;}
+table.ing-table input.num{width:70px;}
+table.ing-table input.small{width:88px;}
+.chk-cell{text-align:center;}
+.chk{
+  width:26px;height:26px;border-radius:7px;border:2px solid var(--border);display:inline-flex;
+  align-items:center;justify-content:center;font-size:15px;color:transparent;transition:.15s;flex-shrink:0;
+}
+.chk.on{background:var(--success);border-color:var(--success);color:#fff;}
+.chk.locked{opacity:.5;pointer-events:none;}
+.row-del{color:var(--danger);font-size:18px;width:26px;height:26px;flex-shrink:0;}
+.add-row-btn{margin-top:10px;}
+.order-hint{font-size:10.5px;color:var(--text-light);}
+
+/* fill items table */
+table.fill-table{width:100%;border-collapse:collapse;}
+table.fill-table th{font-size:11px;color:var(--text-light);text-align:left;padding:6px;border-bottom:1px solid var(--border);}
+table.fill-table td{padding:5px 6px;border-bottom:1px solid #f0ebe4;}
+table.fill-table input{width:100%;border:1px solid transparent;border-radius:6px;padding:6px 7px;}
+table.fill-table input:focus{border-color:var(--border);background:#fff;outline:none;}
+
+.subgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+.chip{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
+.chip-mode-edit{background:var(--warn-light);color:var(--warn);}
+.chip-mode-view{background:var(--success-light);color:var(--success);}
+
+/* ===== Modals ===== */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(30,20,10,.55);z-index:200;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.modal{background:#fff;border-radius:16px;padding:24px;max-width:420px;width:100%;max-height:88vh;overflow-y:auto;}
+.modal h2{font-size:17px;margin-bottom:14px;}
+.modal .field{margin-bottom:12px;}
+.modal-actions{display:flex;gap:10px;margin-top:18px;}
+.pin-dots{display:flex;gap:12px;justify-content:center;margin:18px 0;}
+.pin-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);}
+.pin-dot.filled{background:var(--primary);border-color:var(--primary);}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.pin-key{padding:16px;background:var(--bg);border-radius:10px;font-size:19px;font-weight:700;text-align:center;}
+.pin-key:active{background:var(--primary-light);}
+
+/* toast */
+#toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(120%);
+  background:#2b2620;color:#fff;padding:12px 22px;border-radius:30px;font-size:13.5px;
+  z-index:300;transition:.25s;opacity:0;box-shadow:0 4px 16px rgba(0,0,0,.25);
+}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
+#toast.err{background:var(--danger);}
+
+/* print */
+@media print{
+  header,.toolbar,.detail-header,.no-print,.add-row-btn,.row-del{display:none !important;}
+  body{background:#fff;padding:0;}
+  .container{max-width:100%;padding:0;}
+  .sheet{border:1px solid #999;box-shadow:none;page-break-inside:avoid;margin-bottom:10px;}
+  .field input:disabled,.field textarea:disabled{border:none;background:transparent;}
+  table.ing-table input,table.ing-table select,table.fill-table input{border:none;background:transparent;}
+}
+@media (max-width:640px){
+  .field-row{grid-template-columns:1fr;}
+  .subgrid{grid-template-columns:1fr;}
+  header .brand small{display:none;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">📋</div>
+    <div>
+      <h1>レシピ管理システム</h1>
+      <small><span id="connDot"></span><span id="connText">未接続</span> ・ Any-Cook</small>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="icon-btn" id="settingsBtn" title="Firebase設定">⚙️</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ===== LIST VIEW ===== -->
+  <div id="view-list">
+    <div class="toolbar">
+      <div class="search-box">
+        <span>🔍</span>
+        <input type="text" id="searchInput" placeholder="レシピ名で検索...">
+      </div>
+      <button class="btn btn-primary" id="newRecipeBtn">＋ 新規レシピ</button>
+    </div>
+    <div class="recipe-grid" id="recipeGrid"></div>
+    <div class="empty-state hidden" id="emptyState">
+      <div class="big">🍲</div>
+      <p>レシピがまだありません。「＋ 新規レシピ」から作成してください。</p>
+    </div>
+  </div>
+
+  <!-- ===== DETAIL VIEW ===== -->
+  <div id="view-detail" class="hidden">
+    <div class="detail-header">
+      <button class="back-btn no-print" id="backBtn">← 一覧に戻る</button>
+      <div class="actions no-print">
+        <span class="chip" id="modeChip"></span>
+        <button class="btn btn-ghost btn-sm" id="printBtn">🖨️ 印刷</button>
+        <button class="btn btn-ghost btn-sm" id="dupBtn">📄 複製</button>
+        <button class="btn btn-ghost btn-sm" id="resetBtn">🔄 新しい製造を開始</button>
+        <button class="btn btn-outline btn-sm" id="editToggleBtn">✏️ 編集モード</button>
+        <button class="btn btn-danger btn-sm hidden" id="deleteBtn">🗑️ 削除</button>
+      </div>
+    </div>
+
+    <!-- SHEET 1: 原材料チェックリスト -->
+    <div class="sheet">
+      <div class="sheet-title"><span class="num">1</span>レシピ 品名／原材料チェックリスト</div>
+      <div class="field-row">
+        <div class="field" style="grid-column:1/-1;">
+          <label>品名</label>
+          <input type="text" id="f_name" class="field-title-input" placeholder="例）薬膳参鶏湯風スープ（700ｐ）">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>最終材料着日</label>
+          <input type="date" id="f_finalMaterialDate">
+        </div>
+        <div class="field">
+          <label>製造日</label>
+          <input type="date" id="f_manufactureDate">
+        </div>
+        <div class="field">
+          <label>上がり（出来高）</label>
+          <input type="text" id="f_yield" placeholder="例）255g×700パック">
+        </div>
+        <div class="field">
+          <label>ロット番号</label>
+          <input type="text" id="f_lotNo" placeholder="例）任意のロット管理番号">
+        </div>
+      </div>
+
+      <div class="ing-table-wrap">
+        <table class="ing-table">
+          <thead>
+            <tr>
+              <th>準備済</th><th>原材料</th><th>仕入先</th><th>投入済</th>
+              <th>必要量</th><th>単位</th><th>倍率</th><th>発注量</th><th>有</th><th>ロット日付</th><th class="no-print"></th>
+            </tr>
+          </thead>
+          <tbody id="ingredientBody"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-ghost btn-sm add-row-btn no-print" id="addIngBtn">＋ 原材料を追加</button>
+    </div>
+
+    <!-- SHEET 2: 調理手順・製造設定 -->
+    <div class="sheet">
+      <div class="sheet-title"><span class="num">2</span>調理手順・製造設定</div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>内容量（パック規格）</label>
+          <input type="text" id="f_packageContent" placeholder="例）255g×700パック">
+        </div>
+        <div class="field">
+          <label>容器・パウチ</label>
+          <input type="text" id="f_packageContainer" placeholder="例）HR-1420H（銀袋）">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>使用充填機</label>
+          <input type="text" id="f_fillingMachine" placeholder="例）第二充填機">
+        </div>
+        <div class="field">
+          <label>充填機数値</label>
+          <input type="text" id="f_fillingValue" placeholder="設定値">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>真空機</label>
+          <input type="text" id="f_vacuumMachine" placeholder="使用しない場合は「なし」">
+        </div>
+        <div class="field">
+          <label>第一シール機温度</label>
+          <input type="text" id="f_sealTemp" placeholder="例）150℃">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>賞味期限</label>
+          <input type="text" id="f_shelfLife" placeholder="例）1年">
+        </div>
+        <div class="field">
+          <label>レトルトパターン</label>
+          <input type="text" id="f_retortPattern" placeholder="例）レトルトパターン1">
+        </div>
+      </div>
+      <div class="field">
+        <label>レトルト機 陳列方法</label>
+        <textarea id="f_retortLayout" placeholder="例）片方横8袋、横5袋×2＝1段26袋 ／ 1段26袋×27段＝702袋×2回"></textarea>
+      </div>
+
+      <div style="margin-top:16px;">
+        <label style="font-size:11.5px;color:var(--text-light);font-weight:600;">具材配合表（1パックあたり）</label>
+        <table class="fill-table" style="margin-top:6px;">
+          <thead><tr><th style="width:60%;">材料名</th><th>重量・分量</th><th class="no-print"></th></tr></thead>
+          <tbody id="fillItemBody"></tbody>
+        </table>
+        <button class="btn btn-ghost btn-sm add-row-btn no-print" id="addFillBtn">＋ 具材を追加</button>
+      </div>
+
+      <div class="field-row" style="margin-top:16px;">
+        <div class="field" style="grid-column:1/-1;">
+          <label>製造日前準備</label>
+          <textarea id="f_prepNotes" placeholder="製造日前に済ませておく準備作業"></textarea>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field" style="grid-column:1/-1;">
+          <label>製造中の注意事項</label>
+          <textarea id="f_duringNotes" placeholder="製造中に気をつける手順・注意点"></textarea>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field" style="grid-column:1/-1;">
+          <label>加熱殺菌後・出荷時の注意事項</label>
+          <textarea id="f_afterNotes" placeholder="加熱殺菌後や出荷準備の注意点"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="field no-print" style="text-align:right;font-size:11px;color:var(--text-light);" id="metaInfo"></div>
+  </div>
+
+</div>
+
+<!-- ===== CONFIG MODAL ===== -->
+<div class="modal-overlay hidden" id="configModal">
+  <div class="modal">
+    <h2>🔧 Firebase 設定</h2>
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:14px;">Firebaseプロジェクトの設定値を入力してください。設定はこの端末に保存されます。</p>
+    <div class="field"><label>API Key</label><input type="text" id="cfg_apiKey"></div>
+    <div class="field"><label>Auth Domain</label><input type="text" id="cfg_authDomain"></div>
+    <div class="field"><label>Project ID</label><input type="text" id="cfg_projectId"></div>
+    <div class="field"><label>Storage Bucket</label><input type="text" id="cfg_storageBucket"></div>
+    <div class="field"><label>Messaging Sender ID</label><input type="text" id="cfg_messagingSenderId"></div>
+    <div class="field"><label>App ID</label><input type="text" id="cfg_appId"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-block" id="cfgSaveBtn">保存して接続</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PIN MODAL ===== -->
+<div class="modal-overlay hidden" id="pinModal">
+  <div class="modal">
+    <h2>🔒 編集用PINコード</h2>
+    <p style="font-size:13px;color:var(--text-light);">レシピの構成や設定を編集するにはPINコードが必要です。</p>
+    <div class="pin-dots" id="pinDots"></div>
+    <div class="pin-pad" id="pinPad"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-block" id="pinCancelBtn">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// レシピ管理システム / Any-Cook
+// ============================================================
+var EDIT_PIN = '8299';
+var db = null;
+var recipes = [];
+var currentId = null;
+var editMode = false;
+var pinBuffer = '';
+var pinPurpose = null; // 'edit' | 'delete'
+
+// ---------- Firebase config ----------
+function getConfig(){
+  var raw = localStorage.getItem('recipeFirebaseConfig');
+  if(!raw) return null;
+  try{ return JSON.parse(raw); }catch(e){ return null; }
+}
+function saveConfig(cfg){
+  localStorage.setItem('recipeFirebaseConfig', JSON.stringify(cfg));
+}
+function setConn(on){
+  var dot = document.getElementById('connDot');
+  var txt = document.getElementById('connText');
+  if(on){ dot.className='on'; txt.textContent='接続済み'; }
+  else{ dot.className='off'; txt.textContent='未接続'; }
+}
+function initFirebase(cfg){
+  try{
+    if(!firebase.apps.length){ firebase.initializeApp(cfg); }
+    db = firebase.firestore();
+    setConn(true);
+    subscribeRecipes();
+  }catch(e){
+    console.error(e);
+    setConn(false);
+    showToast('Firebase接続に失敗しました', true);
+  }
+}
+
+// ---------- Toast ----------
+var toastTimer = null;
+function showToast(msg, isErr){
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = isErr ? 'show err' : 'show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.className = t.className.replace('show',''); }, 2600);
+}
+
+// ---------- Sample data ----------
+function sampleRecipe(){
+  return {
+    name: '薬膳参鶏湯風スープ（700ｐ）',
+    finalMaterialDate: '',
+    manufactureDate: '',
+    yieldAmount: '255g×700パック',
+    lotNo: '',
+    ingredients: [
+      { name:'鶏むね肉', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, input:false, inStock:false },
+      { name:'長ネギ', supplier:'', requiredAmount:'', unit:'kg', multiplier:2, lotDate:'', prepared:false, input:false, inStock:false },
+      { name:'蓮の実', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, input:false, inStock:false },
+      { name:'ハト麦・もち米（混合）', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, input:false, inStock:false },
+      { name:'もどし椎茸', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, input:false, inStock:false },
+      { name:'ソース', supplier:'', requiredAmount:'', unit:'kg', multiplier:3, lotDate:'', prepared:false, input:false, inStock:false }
+    ],
+    packageContent: '255g×700パック',
+    packageContainer: 'HR-1420H（銀袋）',
+    fillingMachine: '第二充填機',
+    fillingValue: '',
+    vacuumMachine: 'なし',
+    sealTemp: '150℃',
+    shelfLife: '1年',
+    retortPattern: 'レトルトパターン1',
+    retortLayout: '片方横8袋、横5袋×2＝1段26袋\n1段26袋×27段＝702袋×2回',
+    fillItems: [
+      { name:'鶏むね肉', weight:'60g～65g' },
+      { name:'長ネギ', weight:'15g～20g' },
+      { name:'蓮の実', weight:'4g' },
+      { name:'ハト麦・もち米（混合）', weight:'20g～25g' },
+      { name:'もどし椎茸', weight:'10g～14g' },
+      { name:'ソース', weight:'145g' }
+    ],
+    prepNotes: 'もち麦、ハト麦を混合しておく',
+    duringNotes: '乾燥椎茸スライスは約10倍にもどす（乾燥→もどし◯kg）\n長ネギ、椎茸、ハスの実（4個）、肉まで計ってハト麦・もち麦の混合で合わせる\nスープを加熱攪拌する場合は焦げないように注意する\n具詰めは最終混合のもち米で最終具材重量を合わせる',
+    afterNotes: '残った材料は商品と一緒に発送する',
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
+// ---------- Firestore subscription ----------
+function subscribeRecipes(){
+  db.collection('recipes').orderBy('updatedAt','desc').onSnapshot(function(snap){
+    recipes = [];
+    snap.forEach(function(doc){
+      var d = doc.data();
+      d.id = doc.id;
+      recipes.push(d);
+    });
+    if(recipes.length === 0 && !localStorage.getItem('recipeSeeded')){
+      localStorage.setItem('recipeSeeded','1');
+      db.collection('recipes').add(sampleRecipe());
+    }
+    renderList();
+    if(currentId){
+      var cur = recipes.filter(function(r){ return r.id === currentId; })[0];
+      if(cur) renderDetail(cur);
+    }
+  }, function(err){
+    console.error(err);
+    showToast('データ取得エラー', true);
+  });
+}
+
+// ---------- List rendering ----------
+function progressOf(r){
+  var ings = r.ingredients || [];
+  if(ings.length === 0) return {done:0,total:0,pct:0};
+  var done = 0;
+  ings.forEach(function(i){ if(i.prepared && i.input) done++; });
+  return { done: done, total: ings.length, pct: Math.round(done/ings.length*100) };
+}
+function renderList(){
+  var q = (document.getElementById('searchInput').value || '').toLowerCase();
+  var grid = document.getElementById('recipeGrid');
+  var filtered = recipes.filter(function(r){ return (r.name||'').toLowerCase().indexOf(q) !== -1; });
+  document.getElementById('emptyState').classList.toggle('hidden', recipes.length !== 0);
+  var html = '';
+  filtered.forEach(function(r){
+    var p = progressOf(r);
+    var dateStr = r.manufactureDate ? ('製造日: ' + r.manufactureDate) : '製造日: 未設定';
+    html += '<div class="recipe-card" data-id="' + r.id + '">'
+      + '<h3>' + escapeHtml(r.name || '（無題のレシピ）') + '</h3>'
+      + '<div class="meta">' + dateStr + ' ・ 材料 ' + p.total + ' 品目</div>'
+      + '<div class="progress-row"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p.pct + '%;"></div></div><span>' + p.done + '/' + p.total + '</span></div>'
+      + '</div>';
+  });
+  grid.innerHTML = html;
+  var cards = grid.querySelectorAll('.recipe-card');
+  for(var i=0;i<cards.length;i++){
+    cards[i].addEventListener('click', function(){
+      openDetail(this.getAttribute('data-id'));
+    });
+  }
+}
+
+function escapeHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---------- Detail rendering ----------
+function openDetail(id){
+  currentId = id;
+  editMode = false;
+  var r = recipes.filter(function(x){ return x.id === id; })[0];
+  if(!r) return;
+  document.getElementById('view-list').classList.add('hidden');
+  document.getElementById('view-detail').classList.remove('hidden');
+  renderDetail(r);
+  window.scrollTo(0,0);
+}
+function closeDetail(){
+  currentId = null;
+  editMode = false;
+  document.getElementById('view-detail').classList.add('hidden');
+  document.getElementById('view-list').classList.remove('hidden');
+}
+
+var unitOptions = ['kg','g','L','ml','個','袋','本','枚'];
+
+function renderDetail(r){
+  // header fields
+  setVal('f_name', r.name);
+  setVal('f_finalMaterialDate', r.finalMaterialDate);
+  setVal('f_manufactureDate', r.manufactureDate);
+  setVal('f_yield', r.yieldAmount);
+  setVal('f_lotNo', r.lotNo);
+  setVal('f_packageContent', r.packageContent);
+  setVal('f_packageContainer', r.packageContainer);
+  setVal('f_fillingMachine', r.fillingMachine);
+  setVal('f_fillingValue', r.fillingValue);
+  setVal('f_vacuumMachine', r.vacuumMachine);
+  setVal('f_sealTemp', r.sealTemp);
+  setVal('f_shelfLife', r.shelfLife);
+  setVal('f_retortPattern', r.retortPattern);
+  setVal('f_retortLayout', r.retortLayout);
+  setVal('f_prepNotes', r.prepNotes);
+  setVal('f_duringNotes', r.duringNotes);
+  setVal('f_afterNotes', r.afterNotes);
+
+  renderIngredients(r.ingredients || []);
+  renderFillItems(r.fillItems || []);
+
+  applyEditMode();
+
+  var meta = document.getElementById('metaInfo');
+  var upd = r.updatedAt ? new Date(r.updatedAt).toLocaleString('ja-JP') : '-';
+  meta.textContent = '最終更新: ' + upd;
+
+  document.getElementById('deleteBtn').classList.toggle('hidden', !editMode);
+}
+function setVal(id, v){
+  var el = document.getElementById(id);
+  el.value = (v === undefined || v === null) ? '' : v;
+}
+
+function renderIngredients(list){
+  var body = document.getElementById('ingredientBody');
+  var html = '';
+  list.forEach(function(ing, idx){
+    var orderAmt = '';
+    var mult = (ing.multiplier === undefined || ing.multiplier === null || ing.multiplier === '') ? 1 : ing.multiplier;
+    var req = parseFloat(ing.requiredAmount);
+    if(!isNaN(req) && mult && mult != 1){
+      orderAmt = (req * mult).toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
+    }
+    html += '<tr data-idx="' + idx + '">'
+      + '<td class="chk-cell"><button class="chk ing-chk' + (ing.prepared?' on':'') + '" data-field="prepared">' + (ing.prepared?'✓':'') + '</button></td>'
+      + '<td><input type="text" class="ing-field" data-field="name" value="' + escapeHtml(ing.name) + '" placeholder="原材料名"></td>'
+      + '<td><input type="text" class="ing-field" data-field="supplier" value="' + escapeHtml(ing.supplier) + '" placeholder="仕入先"></td>'
+      + '<td class="chk-cell"><button class="chk ing-chk' + (ing.input?' on':'') + '" data-field="input">' + (ing.input?'✓':'') + '</button></td>'
+      + '<td><input type="number" step="0.01" class="ing-field num" data-field="requiredAmount" value="' + (ing.requiredAmount==null?'':ing.requiredAmount) + '" placeholder="0"></td>'
+      + '<td><select class="ing-field" data-field="unit">' + unitOptionsHtml(ing.unit) + '</select></td>'
+      + '<td><input type="number" step="0.1" class="ing-field num" data-field="multiplier" value="' + mult + '"></td>'
+      + '<td><span class="order-hint">' + orderAmt + '</span></td>'
+      + '<td class="chk-cell"><button class="chk ing-chk' + (ing.inStock?' on':'') + '" data-field="inStock">' + (ing.inStock?'✓':'') + '</button></td>'
+      + '<td><input type="text" class="ing-field small" data-field="lotDate" value="' + escapeHtml(ing.lotDate) + '" placeholder="日付/ロット"></td>'
+      + '<td class="no-print"><button class="row-del" data-action="delIng">✕</button></td>'
+      + '</tr>';
+  });
+  body.innerHTML = html;
+
+  var rows = body.querySelectorAll('tr');
+  for(var i=0;i<rows.length;i++){
+    bindIngredientRow(rows[i]);
+  }
+}
+function unitOptionsHtml(sel){
+  var html = '';
+  unitOptions.forEach(function(u){
+    html += '<option value="' + u + '"' + (u===sel?' selected':'') + '>' + u + '</option>';
+  });
+  return html;
+}
+function bindIngredientRow(row){
+  var idx = parseInt(row.getAttribute('data-idx'),10);
+  var chks = row.querySelectorAll('.ing-chk');
+  for(var i=0;i<chks.length;i++){
+    chks[i].addEventListener('click', function(){
+      var field = this.getAttribute('data-field');
+      var r = getCurrentRecipe();
+      if(!r) return;
+      r.ingredients[idx][field] = !r.ingredients[idx][field];
+      saveRecipe(r);
+    });
+  }
+  var fields = row.querySelectorAll('.ing-field');
+  for(var j=0;j<fields.length;j++){
+    fields[j].addEventListener('change', function(){
+      var field = this.getAttribute('data-field');
+      var r = getCurrentRecipe();
+      if(!r) return;
+      var v = this.value;
+      if(field==='requiredAmount' || field==='multiplier'){ v = v===''?'':parseFloat(v); }
+      r.ingredients[idx][field] = v;
+      saveRecipe(r);
+    });
+  }
+  var delBtn = row.querySelector('[data-action="delIng"]');
+  if(delBtn){
+    delBtn.addEventListener('click', function(){
+      var r = getCurrentRecipe();
+      if(!r) return;
+      r.ingredients.splice(idx,1);
+      saveRecipe(r);
+    });
+  }
+}
+
+function renderFillItems(list){
+  var body = document.getElementById('fillItemBody');
+  var html = '';
+  list.forEach(function(f, idx){
+    html += '<tr data-idx="' + idx + '">'
+      + '<td><input type="text" class="fill-field" data-field="name" value="' + escapeHtml(f.name) + '" placeholder="材料名"></td>'
+      + '<td><input type="text" class="fill-field" data-field="weight" value="' + escapeHtml(f.weight) + '" placeholder="例）60g～65g"></td>'
+      + '<td class="no-print"><button class="row-del" data-action="delFill">✕</button></td>'
+      + '</tr>';
+  });
+  body.innerHTML = html;
+  var rows = body.querySelectorAll('tr');
+  for(var i=0;i<rows.length;i++){
+    bindFillRow(rows[i]);
+  }
+}
+function bindFillRow(row){
+  var idx = parseInt(row.getAttribute('data-idx'),10);
+  var fields = row.querySelectorAll('.fill-field');
+  for(var j=0;j<fields.length;j++){
+    fields[j].addEventListener('change', function(){
+      var field = this.getAttribute('data-field');
+      var r = getCurrentRecipe();
+      if(!r) return;
+      r.fillItems[idx][field] = this.value;
+      saveRecipe(r);
+    });
+  }
+  var delBtn = row.querySelector('[data-action="delFill"]');
+  if(delBtn){
+    delBtn.addEventListener('click', function(){
+      var r = getCurrentRecipe();
+      if(!r) return;
+      r.fillItems.splice(idx,1);
+      saveRecipe(r);
+    });
+  }
+}
+
+function getCurrentRecipe(){
+  return recipes.filter(function(r){ return r.id === currentId; })[0] || null;
+}
+
+// ---------- Save (debounced per-field via change events already; also header fields) ----------
+function saveRecipe(r){
+  r.updatedAt = Date.now();
+  var data = {};
+  for(var k in r){ if(k !== 'id') data[k] = r[k]; }
+  db.collection('recipes').doc(r.id).set(data, {merge:true}).then(function(){
+    showToast('保存しました');
+  }).catch(function(e){
+    console.error(e);
+    showToast('保存に失敗しました', true);
+  });
+}
+
+function bindHeaderFieldSave(id, field){
+  document.getElementById(id).addEventListener('change', function(){
+    var r = getCurrentRecipe();
+    if(!r) return;
+    r[field] = this.value;
+    saveRecipe(r);
+  });
+}
+
+// ---------- Edit mode ----------
+function applyEditMode(){
+  var chip = document.getElementById('modeChip');
+  chip.textContent = editMode ? '編集モード' : 'チェックリストモード';
+  chip.className = 'chip ' + (editMode ? 'chip-mode-edit' : 'chip-mode-view');
+  document.getElementById('editToggleBtn').textContent = editMode ? '✅ 編集を終了' : '✏️ 編集モード';
+
+  var lockIds = ['f_name','f_finalMaterialDate','f_yield','f_lotNo',
+    'f_packageContent','f_packageContainer','f_fillingMachine','f_fillingValue',
+    'f_vacuumMachine','f_sealTemp','f_shelfLife','f_retortPattern','f_retortLayout',
+    'f_prepNotes','f_duringNotes','f_afterNotes'];
+  lockIds.forEach(function(id){
+    document.getElementById(id).disabled = !editMode;
+  });
+  // manufactureDate and checklist stay editable always (operational fields)
+
+  var ingNameSupplier = document.querySelectorAll('.ing-field[data-field="name"], .ing-field[data-field="supplier"], .ing-field[data-field="requiredAmount"], .ing-field[data-field="unit"], .ing-field[data-field="multiplier"]');
+  for(var i=0;i<ingNameSupplier.length;i++){ ingNameSupplier[i].disabled = !editMode; }
+  var delBtns = document.querySelectorAll('.row-del');
+  for(var j=0;j<delBtns.length;j++){ delBtns[j].style.visibility = editMode ? 'visible' : 'hidden'; }
+  document.getElementById('addIngBtn').classList.toggle('hidden', !editMode);
+  document.getElementById('addFillBtn').classList.toggle('hidden', !editMode);
+  var fillNameFields = document.querySelectorAll('.fill-field');
+  for(var k=0;k<fillNameFields.length;k++){ fillNameFields[k].disabled = !editMode; }
+
+  document.getElementById('deleteBtn').classList.toggle('hidden', !editMode);
+}
+
+// ---------- PIN modal ----------
+function openPinModal(purpose){
+  pinPurpose = purpose;
+  pinBuffer = '';
+  renderPinDots();
+  document.getElementById('pinModal').classList.remove('hidden');
+}
+function closePinModal(){
+  document.getElementById('pinModal').classList.add('hidden');
+  pinBuffer = '';
+}
+function renderPinDots(){
+  var wrap = document.getElementById('pinDots');
+  var html = '';
+  for(var i=0;i<4;i++){
+    html += '<div class="pin-dot' + (i < pinBuffer.length ? ' filled' : '') + '"></div>';
+  }
+  wrap.innerHTML = html;
+}
+function buildPinPad(){
+  var pad = document.getElementById('pinPad');
+  var keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  var html = '';
+  keys.forEach(function(k){
+    if(k === ''){ html += '<div></div>'; }
+    else{ html += '<button class="pin-key" data-key="' + k + '">' + k + '</button>'; }
+  });
+  pad.innerHTML = html;
+  var btns = pad.querySelectorAll('.pin-key');
+  for(var i=0;i<btns.length;i++){
+    btns[i].addEventListener('click', function(){
+      var k = this.getAttribute('data-key');
+      if(k === '⌫'){ pinBuffer = pinBuffer.slice(0,-1); }
+      else if(pinBuffer.length < 4){ pinBuffer += k; }
+      renderPinDots();
+      if(pinBuffer.length === 4){ checkPin(); }
+    });
+  }
+}
+function checkPin(){
+  if(pinBuffer === EDIT_PIN){
+    closePinModal();
+    if(pinPurpose === 'edit'){
+      editMode = true;
+      applyEditMode();
+      showToast('編集モードになりました');
+    } else if(pinPurpose === 'delete'){
+      doDelete();
+    }
+  } else {
+    showToast('PINが違います', true);
+    pinBuffer = '';
+    renderPinDots();
+  }
+}
+
+// ---------- Actions ----------
+function addIngredientRow(){
+  var r = getCurrentRecipe();
+  if(!r) return;
+  if(!r.ingredients) r.ingredients = [];
+  r.ingredients.push({ name:'', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, input:false, inStock:false });
+  saveRecipe(r);
+}
+function addFillItemRow(){
+  var r = getCurrentRecipe();
+  if(!r) return;
+  if(!r.fillItems) r.fillItems = [];
+  r.fillItems.push({ name:'', weight:'' });
+  saveRecipe(r);
+}
+function createNewRecipe(){
+  var blank = {
+    name:'新しいレシピ', finalMaterialDate:'', manufactureDate:'', yieldAmount:'', lotNo:'',
+    ingredients:[], packageContent:'', packageContainer:'', fillingMachine:'', fillingValue:'',
+    vacuumMachine:'', sealTemp:'', shelfLife:'', retortPattern:'', retortLayout:'',
+    fillItems:[], prepNotes:'', duringNotes:'', afterNotes:'',
+    createdAt: Date.now(), updatedAt: Date.now()
+  };
+  db.collection('recipes').add(blank).then(function(docRef){
+    openDetail(docRef.id);
+    editMode = true;
+    applyEditMode();
+  }).catch(function(e){
+    console.error(e); showToast('作成に失敗しました', true);
+  });
+}
+function duplicateRecipe(){
+  var r = getCurrentRecipe();
+  if(!r) return;
+  var copy = JSON.parse(JSON.stringify(r));
+  delete copy.id;
+  copy.name = (r.name || '無題') + '（コピー）';
+  copy.createdAt = Date.now();
+  copy.updatedAt = Date.now();
+  db.collection('recipes').add(copy).then(function(docRef){
+    showToast('複製しました');
+    openDetail(docRef.id);
+  }).catch(function(e){ console.error(e); showToast('複製に失敗しました', true); });
+}
+function resetChecklist(){
+  var r = getCurrentRecipe();
+  if(!r) return;
+  if(!confirm('チェック状態・ロット日付・製造日・最終材料着日をリセットして、新しい製造をはじめますか？')) return;
+  r.finalMaterialDate = '';
+  r.manufactureDate = '';
+  (r.ingredients||[]).forEach(function(i){
+    i.prepared = false; i.input = false; i.inStock = false; i.lotDate = '';
+  });
+  saveRecipe(r);
+  showToast('チェックリストをリセットしました');
+}
+function doDelete(){
+  var r = getCurrentRecipe();
+  if(!r) return;
+  if(!confirm('「' + r.name + '」を削除しますか？この操作は取り消せません。')) return;
+  db.collection('recipes').doc(r.id).delete().then(function(){
+    showToast('削除しました');
+    closeDetail();
+  }).catch(function(e){ console.error(e); showToast('削除に失敗しました', true); });
+}
+
+// ---------- Event bindings ----------
+document.getElementById('newRecipeBtn').addEventListener('click', createNewRecipe);
+document.getElementById('backBtn').addEventListener('click', closeDetail);
+document.getElementById('searchInput').addEventListener('input', renderList);
+document.getElementById('addIngBtn').addEventListener('click', addIngredientRow);
+document.getElementById('addFillBtn').addEventListener('click', addFillItemRow);
+document.getElementById('printBtn').addEventListener('click', function(){ window.print(); });
+document.getElementById('dupBtn').addEventListener('click', duplicateRecipe);
+document.getElementById('resetBtn').addEventListener('click', resetChecklist);
+document.getElementById('deleteBtn').addEventListener('click', function(){ openPinModal('delete'); });
+document.getElementById('editToggleBtn').addEventListener('click', function(){
+  if(editMode){ editMode = false; applyEditMode(); }
+  else{ openPinModal('edit'); }
+});
+document.getElementById('pinCancelBtn').addEventListener('click', closePinModal);
+
+[['f_name','name'],['f_finalMaterialDate','finalMaterialDate'],['f_manufactureDate','manufactureDate'],
+ ['f_yield','yieldAmount'],['f_lotNo','lotNo'],['f_packageContent','packageContent'],
+ ['f_packageContainer','packageContainer'],['f_fillingMachine','fillingMachine'],['f_fillingValue','fillingValue'],
+ ['f_vacuumMachine','vacuumMachine'],['f_sealTemp','sealTemp'],['f_shelfLife','shelfLife'],
+ ['f_retortPattern','retortPattern'],['f_retortLayout','retortLayout'],
+ ['f_prepNotes','prepNotes'],['f_duringNotes','duringNotes'],['f_afterNotes','afterNotes']
+].forEach(function(pair){ bindHeaderFieldSave(pair[0], pair[1]); });
+
+document.getElementById('settingsBtn').addEventListener('click', function(){
+  var cfg = getConfig() || {};
+  document.getElementById('cfg_apiKey').value = cfg.apiKey || '';
+  document.getElementById('cfg_authDomain').value = cfg.authDomain || '';
+  document.getElementById('cfg_projectId').value = cfg.projectId || '';
+  document.getElementById('cfg_storageBucket').value = cfg.storageBucket || '';
+  document.getElementById('cfg_messagingSenderId').value = cfg.messagingSenderId || '';
+  document.getElementById('cfg_appId').value = cfg.appId || '';
+  document.getElementById('configModal').classList.remove('hidden');
+});
+document.getElementById('cfgSaveBtn').addEventListener('click', function(){
+  var cfg = {
+    apiKey: document.getElementById('cfg_apiKey').value.trim(),
+    authDomain: document.getElementById('cfg_authDomain').value.trim(),
+    projectId: document.getElementById('cfg_projectId').value.trim(),
+    storageBucket: document.getElementById('cfg_storageBucket').value.trim(),
+    messagingSenderId: document.getElementById('cfg_messagingSenderId').value.trim(),
+    appId: document.getElementById('cfg_appId').value.trim()
+  };
+  if(!cfg.apiKey || !cfg.projectId){ showToast('API KeyとProject IDは必須です', true); return; }
+  saveConfig(cfg);
+  document.getElementById('configModal').classList.add('hidden');
+  initFirebase(cfg);
+});
+
+buildPinPad();
+
+// ---------- Boot ----------
+window.onload = function(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(function(e){ console.log('SW registration failed', e); });
+  }
+  var cfg = getConfig();
+  if(cfg && cfg.apiKey){
+    initFirebase(cfg);
+  } else {
+    document.getElementById('configModal').classList.remove('hidden');
+    setConn(false);
+  }
+};
+</script>
+</body>
+</html>
