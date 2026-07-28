@@ -150,12 +150,14 @@ table.ing-table input.small{width:88px;}
 }
 .chk.on{background:var(--success);border-color:var(--success);color:#fff;}
 .chk.locked{opacity:.5;pointer-events:none;}
+.stock-cell{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.stock-cell .deliv-date{width:120px;font-size:11px;}
 .row-del{color:var(--danger);font-size:18px;width:26px;height:26px;flex-shrink:0;}
 .add-row-btn{margin-top:10px;}
 .order-hint{font-size:10.5px;color:var(--text-light);}
 .bulk-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:10px 12px;background:var(--bg);border-radius:10px;}
 .bulk-row .field{margin-bottom:0;}
-.final-record{margin-top:6px;padding:14px;background:var(--success-light);border-radius:10px;border:1px solid #d3e8d8;}
+.final-record{margin-top:0;margin-bottom:14px;padding:14px;background:var(--success-light);border-radius:10px;border:1px solid #d3e8d8;}
 .final-record .sheet-title{border-bottom:none;margin-bottom:10px;padding-bottom:0;color:var(--success);}
 .date-group{margin:22px 0 10px;display:flex;align-items:center;gap:10px;}
 .date-group h2{font-size:14px;color:var(--primary-dark);white-space:nowrap;}
@@ -307,31 +309,13 @@ table.fill-table input:focus{border-color:var(--border);background:#fff;outline:
           <thead>
             <tr>
               <th>準備済</th><th>準備確認者</th><th>原材料</th><th>仕入先</th><th>投入済</th><th>投入確認者</th>
-              <th>必要量</th><th>単位</th><th>倍率</th><th>発注量</th><th>有</th><th>ロット日付</th><th class="no-print"></th>
+              <th>必要量</th><th>単位</th><th>倍率</th><th>発注量</th><th>有（未入荷時は納品予定日）</th><th>ロット日付</th><th class="no-print"></th>
             </tr>
           </thead>
           <tbody id="ingredientBody"></tbody>
         </table>
       </div>
       <button class="btn btn-ghost btn-sm add-row-btn no-print" id="addIngBtn">＋ 原材料を追加</button>
-
-      <div class="final-record">
-        <div class="sheet-title" style="margin-top:18px;"><span class="num">✓</span>製造実績・最終確認</div>
-        <div class="field-row">
-          <div class="field">
-            <label>実績製造数</label>
-            <input type="text" id="f_actualYield" placeholder="例）698パック">
-          </div>
-          <div class="field">
-            <label>最終確認者</label>
-            <input type="text" id="f_finalConfirmedBy" placeholder="製造数を記入・保存した人">
-          </div>
-          <div class="field">
-            <label>最終確認日</label>
-            <input type="date" id="f_finalConfirmedDate">
-          </div>
-        </div>
-      </div>
     </div>
 
 
@@ -409,6 +393,24 @@ table.fill-table input:focus{border-color:var(--border);background:#fff;outline:
         <div class="field" style="grid-column:1/-1;">
           <label>加熱殺菌後・出荷時の注意事項</label>
           <textarea id="f_afterNotes" placeholder="加熱殺菌後や出荷準備の注意点"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="final-record">
+      <div class="sheet-title" style="margin-top:0;"><span class="num">✓</span>製造実績・最終確認</div>
+      <div class="field-row">
+        <div class="field">
+          <label>実績製造数</label>
+          <input type="text" id="f_actualYield" placeholder="例）698パック">
+        </div>
+        <div class="field">
+          <label>最終確認者</label>
+          <input type="text" id="f_finalConfirmedBy" placeholder="製造数を記入・保存した人">
+        </div>
+        <div class="field">
+          <label>最終確認日</label>
+          <input type="date" id="f_finalConfirmedDate">
         </div>
       </div>
     </div>
@@ -733,7 +735,9 @@ function renderIngredients(list){
       + '<td><select class="ing-field" data-field="unit">' + unitOptionsHtml(ing.unit) + '</select></td>'
       + '<td><input type="number" step="0.1" class="ing-field num" data-field="multiplier" value="' + mult + '"></td>'
       + '<td><span class="order-hint">' + orderAmt + '</span></td>'
-      + '<td class="chk-cell"><button class="chk ing-chk' + (ing.inStock?' on':'') + '" data-field="inStock">' + (ing.inStock?'✓':'') + '</button></td>'
+      + '<td class="chk-cell stock-cell"><button class="chk ing-chk' + (ing.inStock?' on':'') + '" data-field="inStock">' + (ing.inStock?'✓':'') + '</button>'
+        + (ing.inStock ? '' : '<input type="date" class="ing-field small deliv-date" data-field="deliveryDate" value="' + escapeHtml(ing.deliveryDate) + '" title="納品予定日">')
+        + '</td>'
       + '<td><input type="text" class="ing-field small" data-field="lotDate" value="' + escapeHtml(ing.lotDate) + '" placeholder="日付/ロット"></td>'
       + '<td class="no-print"><button class="row-del" data-action="delIng">✕</button></td>'
       + '</tr>';
@@ -761,6 +765,15 @@ function bindIngredientRow(row){
       var r = getCurrentRecipe();
       if(!r) return;
       var newVal = !r.ingredients[idx][field];
+      if(field === 'prepared' && newVal){
+        var preparedByInput = row.querySelector('[data-field="preparedBy"]');
+        var nameVal = preparedByInput ? preparedByInput.value.trim() : '';
+        if(!nameVal){
+          showToast('準備確認者を入力してから「準備済」にチェックしてください', true);
+          return;
+        }
+        r.ingredients[idx].preparedBy = nameVal;
+      }
       r.ingredients[idx][field] = newVal;
       if(newVal && field === 'prepared'){
         r.ingredients[idx].preparedDate = todayStr();
@@ -780,6 +793,13 @@ function bindIngredientRow(row){
       var v = this.value;
       if(field==='requiredAmount' || field==='multiplier'){ v = v===''?'':parseFloat(v); }
       r.ingredients[idx][field] = v;
+      if(field === 'preparedBy' && v.trim() === '' && r.ingredients[idx].prepared){
+        r.ingredients[idx].prepared = false;
+        showToast('準備確認者が空欄になったため「準備済」のチェックを外しました', true);
+        saveRecipe(r);
+        renderIngredients(r.ingredients || []);
+        return;
+      }
       saveRecipe(r);
     });
   }
@@ -948,7 +968,7 @@ function addIngredientRow(){
   var r = getCurrentRecipe();
   if(!r) return;
   if(!r.ingredients) r.ingredients = [];
-  r.ingredients.push({ name:'', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, preparedBy:'', preparedDate:'', input:false, inputBy:'', inputDate:'', inStock:false });
+  r.ingredients.push({ name:'', supplier:'', requiredAmount:'', unit:'kg', multiplier:1, lotDate:'', prepared:false, preparedBy:'', preparedDate:'', input:false, inputBy:'', inputDate:'', inStock:false, deliveryDate:'' });
   saveRecipe(r);
 }
 function addFillItemRow(){
@@ -998,7 +1018,7 @@ function resetChecklist(){
   r.finalConfirmedBy = '';
   r.finalConfirmedDate = '';
   (r.ingredients||[]).forEach(function(i){
-    i.prepared = false; i.input = false; i.inStock = false; i.lotDate = '';
+    i.prepared = false; i.input = false; i.inStock = false; i.lotDate = ''; i.deliveryDate = '';
     i.preparedBy = ''; i.preparedDate = '';
     i.inputBy = ''; i.inputDate = '';
   });
@@ -1071,7 +1091,7 @@ function downloadTextFile(filename, text){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
 }
-var ING_CSV_HEADERS = ['原材料名','仕入先','必要量','単位','倍率','ロット日付','準備済','準備確認者','準備確認日','投入済','投入確認者','投入確認日','有'];
+var ING_CSV_HEADERS = ['原材料名','仕入先','必要量','単位','倍率','ロット日付','準備済','準備確認者','準備確認日','投入済','投入確認者','投入確認日','有','納品予定日'];
 function exportIngredientsCSV(){
   var r = getCurrentRecipe();
   if(!r) return;
@@ -1082,7 +1102,7 @@ function exportIngredientsCSV(){
       csvEscapeField(i.unit), csvEscapeField(i.multiplier), csvEscapeField(i.lotDate),
       i.prepared ? '1' : '0', csvEscapeField(i.preparedBy), csvEscapeField(i.preparedDate),
       i.input ? '1' : '0', csvEscapeField(i.inputBy), csvEscapeField(i.inputDate),
-      i.inStock ? '1' : '0'
+      i.inStock ? '1' : '0', csvEscapeField(i.deliveryDate)
     ].join(','));
   });
   var fname = (r.name || 'recipe').replace(/[\\/:*?"<>|]/g,'_') + '_原材料.csv';
@@ -1102,7 +1122,7 @@ function importIngredientsCSV(file){
         iUnit = idxOf('単位'), iMult = idxOf('倍率'), iLot = idxOf('ロット日付'),
         iPrep = idxOf('準備済'), iPrepBy = idxOf('準備確認者'), iPrepDate = idxOf('準備確認日'),
         iInput = idxOf('投入済'), iInputBy = idxOf('投入確認者'), iInputDate = idxOf('投入確認日'),
-        iStock = idxOf('有');
+        iStock = idxOf('有'), iDeliv = idxOf('納品予定日');
     if(iName === -1){ showToast('CSVの見出し行に「原材料名」列が見つかりません', true); return; }
     var toBool = function(v){ return v==='1' || v==='true' || v==='TRUE' || v==='○' || v==='✓'; };
     var newRows = [];
@@ -1122,7 +1142,8 @@ function importIngredientsCSV(file){
         input: iInput>-1 ? toBool(row[iInput]) : false,
         inputBy: iInputBy>-1 ? (row[iInputBy]||'') : '',
         inputDate: iInputDate>-1 ? (row[iInputDate]||'') : '',
-        inStock: iStock>-1 ? toBool(row[iStock]) : false
+        inStock: iStock>-1 ? toBool(row[iStock]) : false,
+        deliveryDate: iDeliv>-1 ? (row[iDeliv]||'') : ''
       });
     }
     if(newRows.length === 0){ showToast('取り込める行がありませんでした', true); return; }
